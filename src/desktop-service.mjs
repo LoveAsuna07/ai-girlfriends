@@ -5,8 +5,10 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { init, load, paths, atomicWrite, readJson, validateConfig, validateEndpoint } from './config.mjs';
 import { prepare, runtimeEntry, runOC, start, stop, processStatus, installRuntime, verifyWechatOwner } from './runtime.mjs';
-import { localModels, testModel } from './providers.mjs';
+import { localModels, testModel, localModelInfo, localVisionModels, testVision } from './providers.mjs';
 import { archiveRoleState } from './role-state.mjs';
+import { visionSettings, proactiveSettings, validateFeatures } from './features.mjs';
+import { proactiveStatus } from './proactive.mjs';
 
 const files = ['IDENTITY.md', 'SOUL.md', 'USER.md'];
 const nameOf = text => text.match(/^-\s*名字[：:]\s*(.+)$/m)?.[1]?.trim() || '晚晴';
@@ -28,7 +30,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
     } catch (e) { if (e.code !== 'ENOENT') state.credentialWarning = '保存的密钥暂时无法读取，请在模型页重新输入。'; }
   }
   const dependencies = {
-    status: processStatus, start, stop, runOC, localModels, testModel, installRuntime,
+    status: processStatus, start, stop, runOC, localModels, testModel, installRuntime, localModelInfo, localVisionModels, testVision,
     ...hooks
   };
   async function persona() {
@@ -41,6 +43,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
     gateway.ready = gateway.running && await fetch(`http://127.0.0.1:${c.gatewayPort}/healthz`, { signal: AbortSignal.timeout(700) }).then(r => r.ok, () => false);
     return {
       mode: c.mode, local: c.local, api: c.api ? { baseUrl: c.api.baseUrl, model: c.api.model, contextWindow: c.api.contextWindow, maxTokens: c.api.maxTokens } : null, persona: p,
+      vision: visionSettings(c), proactive: proactiveSettings(c), proactiveStatus: await proactiveStatus(home, c),
       gateway,
       wechatReady: await verifyWechatOwner(home).then(owner => owner.restricted, () => false),
       runtimeReady: await fs.access(runtimeEntry(home)).then(() => true, () => false),
@@ -144,6 +147,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
   }
   return {
     snapshot,
+    visionModels: () => exclusive('正在检查图片模型能力…', async () => dependencies.localVisionModels(await load(home))),
     models: () => exclusive('正在读取本地模型…', async () => { const c = await load(home); await ensureLocal(c, false); return dependencies.localModels(c); }),
     start: () => exclusive('正在准备陪伴服务…', async () => {
       const c = await load(home); validateConfig(c, c.mode, process.env, true);
@@ -156,6 +160,18 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
       return { message: owner.restricted ? '陪伴已启动，可以回到微信聊天了。' : '服务已启动。首次使用请完成微信 ClawBot 扫码绑定。' };
     }),
     stop: () => exclusive('正在停止陪伴服务…', async () => { await dependencies.stop(home); return { message: '陪伴服务已停止。' }; }),
+    saveFeatures: input => exclusive('正在保存图片与主动联系设置…', async () => {
+      const c = await load(home);
+      const next = { ...c, vision: input.vision, proactive: input.proactive };
+      const normalized = validateFeatures(next); Object.assign(next, normalized);
+      validateConfig(next, next.mode, process.env, true);
+      if (next.vision.enabled && next.mode === 'local') {
+        if (!(await dependencies.localModelInfo(next, next.vision.localModel)).capabilities?.includes('vision')) throw new Error('所选本地模型不支持图片，请选择具有视觉能力的模型。');
+      }
+      await ensureRuntime(); await validateOffline(next); await transact(next);
+      return { message: '图片与主动联系设置已保存。主动消息仅在陪伴服务运行、允许时段和微信会话可用时发送。' };
+    }),
+    testVision: input => exclusive('正在看这张图片，首次加载可能需要一些时间…', async () => dependencies.testVision(await load(home), input)),
     applyModel: input => exclusive('正在检查模型设置…', async () => {
       const old = await load(home), next = structuredClone(old);
       if (!['local', 'api'].includes(input.mode)) throw new Error('请选择本地模型或 API 服务。');

@@ -1,17 +1,31 @@
 {
   "name": "local-companion",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "main": "desktop/main.cjs",
   "private": true,
   "type": "module",
   "description": "Windows OpenClaw 中文陪伴角色与本地/API 双模式启动器",
   "license": "MIT",
-  "engines": { "node": ">=22.23.0" },
+  "engines": {
+    "node": ">=22.23.0"
+  },
   "scripts": {
     "companion": "node src/cli.mjs",
     "desktop": "node scripts/desktop.mjs",
     "test": "node --test tests/*.test.mjs",
     "release-check": "node src/cli.mjs release-check"
   },
-  "files": ["src/", "scripts/", "templates/", "tests/", "desktop/", "docs/", "README.md", "LICENSE", "THIRD_PARTY.md", ".env.example", ".gitignore"]
+  "files": [
+    "src/",
+    "scripts/",
+    "templates/",
+    "tests/",
+    "desktop/",
+    "docs/",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY.md",
+    ".env.example",
+    ".gitignore"
+  ]
 }

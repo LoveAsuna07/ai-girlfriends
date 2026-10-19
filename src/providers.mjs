@@ -1,4 +1,5 @@
 import { validateConfig } from './config.mjs';
+import { visionSettings } from './features.mjs';
 
 export async function requestJson(url, { timeoutMs = 10000, ...options } = {}) {
   let response;
@@ -15,6 +16,36 @@ export async function localModels(c) {
   const data = await requestJson(`${c.local.baseUrl.replace(/\/$/, '')}/api/tags`);
   if (!Array.isArray(data.models)) throw new Error('Ollama 模型列表结构不正确。');
   return data.models.map(m => m.name);
+}
+export async function localModelInfo(c, model) {
+  return requestJson(`${c.local.baseUrl.replace(/\/$/, '')}/api/show`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+}
+export async function localVisionModels(c) {
+  const models = await localModels(c);
+  const supported = await Promise.all(models.map(async model => (await localModelInfo(c, model)).capabilities?.includes('vision') ? model : null));
+  return supported.filter(Boolean);
+}
+export function normalizeImage(input) {
+  if (!input || typeof input.base64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(input.base64) || input.base64.length > 13981016) throw new Error('请选择 10 MB 以内的 PNG、JPEG 或 WebP 图片。');
+  const bytes = Buffer.from(input.base64, 'base64');
+  const mime = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? 'image/png' : bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 ? 'image/jpeg' : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP' ? 'image/webp' : null;
+  if (!mime || bytes.length > 10485760 || bytes.toString('base64') !== input.base64) throw new Error('图片格式无效，仅支持 10 MB 以内的 PNG、JPEG 或 WebP。');
+  return { mime, base64: input.base64 };
+}
+export async function testVision(c, input) {
+  validateConfig(c, c.mode, process.env, true);
+  const v = visionSettings(c); if (!v.enabled) throw new Error('请先开启并保存图片识别设置。');
+  const image = normalizeImage(input), p = c[c.mode];
+  const model = c.mode === 'local' ? v.localModel : v.apiModel || p.model;
+  const prompt = '请用中文描述这张图片的主要内容和可读文字。看不清时请说明，不要猜测。';
+  const started = performance.now(); let data;
+  if (c.mode === 'local') {
+    if (!(await localModelInfo(c, model)).capabilities?.includes('vision')) throw new Error('所选模型不支持图片。');
+    data = await requestJson(p.baseUrl.replace(/\/$/, '') + '/api/chat', { method: 'POST', timeoutMs: 180000, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, stream: false, think: false, messages: [{ role: 'user', content: prompt, images: [image.base64] }], options: { num_ctx: 8192, num_predict: 512, temperature: 0.2 }, keep_alive: 0 }) });
+  } else {
+    data = await requestJson(p.baseUrl.replace(/\/$/, '') + '/chat/completions', { method: 'POST', timeoutMs: 180000, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env[p.keyEnv]}` }, body: JSON.stringify({ model, stream: false, max_tokens: 512, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:${image.mime};base64,${image.base64}` } }] }] }) });
+  }
+  return { message: `图片识别成功 · ${model} · ${((performance.now() - started) / 1000).toFixed(1)} 秒`, reply: cleanReply(c.mode === 'local' ? data.message?.content : data.choices?.[0]?.message?.content) };
 }
 export function cleanReply(text) {
   if (typeof text !== 'string') throw new Error('模型回复结构不正确。');

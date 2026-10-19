@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 let token = new URLSearchParams(location.hash.slice(1)).get('session');
 history.replaceState(null, '', location.pathname);
 let current, selectedMode = 'local', localBusy = false, toastTimer;
-const pageNames = { home: '开始陪伴', models: '模型', persona: '角色设定' };
+const pageNames = { home: '开始陪伴', models: '模型', persona: '角色设定', together: '更多陪伴' };
 function toast(message, error = false) {
   clearTimeout(toastTimer); $('toast-message').textContent = message;
   $('toast').classList.toggle('error', error); $('toast').hidden = false;
@@ -42,7 +42,13 @@ function fillForms() {
   $('remember-key').checked = current.credentials.stored;
   $('api-key').placeholder = current.credentials.present ? '密钥已就绪，留空继续使用' : '输入你的密钥';
   $('key-note').textContent = current.credentials.warning || (current.credentials.canStore ? '加密后仅此 Windows 账户可读取；不保存则仅本次运行有效。' : '当前为浏览器测试模式，密钥仅在本次运行期间有效。');
+  $('vision-enabled').checked = current.vision.enabled; $('vision-api-model').value = current.vision.apiModel;
+  ensureVisionOption(current.vision.localModel); $('vision-local-model').value = current.vision.localModel;
+  const p = current.proactive;
+  $('proactive-enabled').checked = p.enabled; $('proactive-idle').value = p.idleMinutes; $('proactive-interval').value = p.intervalMinutes; $('proactive-limit').value = p.dailyLimit;
+  $('proactive-start').value = p.start; $('proactive-end').value = p.end; $('proactive-zone').value = p.timeZone; $('proactive-prompt').value = p.prompt;
 }
+function ensureVisionOption(model) { if (![...$('vision-local-model').options].some(x => x.value === model)) $('vision-local-model').add(new Option(model + '（当前配置）', model)); }
 function renderStatus() {
   const alive = current.gateway.running, running = alive && current.gateway.ready, busy = localBusy || current.operation.busy;
   document.body.classList.toggle('busy', busy);
@@ -62,7 +68,10 @@ function renderStatus() {
   $('home-model-detail').textContent = current.mode === 'local' ? '本地运行 · Ollama' : 'API 服务 · 自定义接口';
   $('privacy-text').textContent = current.mode === 'local' ? '本地模式' : 'API 模式';
   $('test-description').textContent = `当前已应用：${model}。测试会发送一句简短问候。`;
-  for (const id of ['save-model', 'save-persona', 'test-model', 'refresh-models', 'reset-persona']) $(id).disabled = busy;
+  $('vision-local-fields').hidden = current.mode !== 'local'; $('vision-api-fields').hidden = current.mode !== 'api';
+  const ps = current.proactiveStatus;
+  $('proactive-runtime').textContent = !current.proactive.enabled ? '主动联系已关闭。' : !running ? '陪伴服务未运行，主动联系已暂停。' : `${ps.reason}。今日尝试 ${ps.attemptsToday}/${current.proactive.dailyLimit} 次。${ps.lastResult ? '\n' + ps.lastResult : ''}`;
+  for (const id of ['save-model', 'save-persona', 'test-model', 'refresh-models', 'reset-persona', 'save-features', 'test-vision']) $(id).disabled = busy;
 }
 async function refreshState(forms = false) {
   current = await request('state'); renderStatus(); if (forms) fillForms();
@@ -77,12 +86,22 @@ async function refreshModels() {
     $('models-note').textContent = result.models.length ? `找到 ${result.models.length} 个已下载模型。只会使用你明确选择的模型。` : '暂时没有已下载的模型，请先在 Ollama 中下载。';
   } catch (e) { $('local-model').replaceChildren(new Option(current?.local.model || 'Ollama 未连接', current?.local.model || '')); $('models-note').textContent = e.message; }
 }
+async function refreshVisionModels() {
+  const selected = $('vision-local-model').value || current.vision.localModel;
+  try {
+    const { models } = await request('vision-models'); $('vision-local-model').replaceChildren();
+    for (const model of models) $('vision-local-model').add(new Option(model, model));
+    ensureVisionOption(selected); $('vision-local-model').value = selected;
+    $('vision-models-note').textContent = models.length ? `已确认 ${models.length} 个本机图片模型。推荐 qwen3.5:2b，加载更轻。` : '未找到图片模型，请先在 Ollama 下载支持视觉的模型。';
+  } catch (e) { $('vision-models-note').textContent = e.message; }
+}
 async function action(route, body = {}, { forms = false } = {}) {
   if (localBusy) return;
   localBusy = true; renderStatus();
   try {
     const result = await request(route, body);
     if (route === 'test') { $('test-result').hidden = false; $('test-result').textContent = `${result.message}\n${result.reply}`; }
+    if (route === 'vision-test') { $('vision-result').hidden = false; $('vision-result').textContent = `${result.message}\n${result.reply}`; }
     toast(result.message); await refreshState(forms);
     if (route === 'model') $('api-key').value = '';
   } catch (e) { toast(e.message, true); }
@@ -98,9 +117,17 @@ $('reset-persona').addEventListener('click', () => { $('role-name').value = curr
 $('save-persona').addEventListener('click', () => action('persona', { name: $('role-name').value, soul: $('role-soul').value, user: $('role-user').value }, { forms: true }));
 $('save-model').addEventListener('click', () => action('model', { mode: selectedMode, model: $('local-model').value, api: { baseUrl: $('api-url').value, model: $('api-model').value, key: $('api-key').value, remember: $('remember-key').checked, contextWindow: Number($('api-context').value), maxTokens: Number($('api-max').value) } }, { forms: true }));
 $('test-model').addEventListener('click', () => action('test'));
+$('save-features').addEventListener('click', () => action('features', { vision: { enabled: $('vision-enabled').checked, localModel: $('vision-local-model').value, apiModel: $('vision-api-model').value.trim() }, proactive: { enabled: $('proactive-enabled').checked, idleMinutes: Number($('proactive-idle').value), intervalMinutes: Number($('proactive-interval').value), dailyLimit: Number($('proactive-limit').value), start: $('proactive-start').value, end: $('proactive-end').value, timeZone: $('proactive-zone').value.trim(), prompt: $('proactive-prompt').value } }, { forms: true }));
+$('test-vision').addEventListener('click', async () => {
+  if (localBusy) return;
+  const file = $('vision-file').files[0];
+  if (!file || file.size > 10485760 || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { toast('请选择 10 MB 以内的 PNG、JPEG 或 WebP 图片。', true); return; }
+  try { const url = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); }); await action('vision-test', { base64: url.split(',')[1] }); }
+  catch { toast('图片读取失败，请重新选择。', true); }
+});
 $('dismiss-toast').addEventListener('click', () => { $('toast').hidden = true; });
 (async () => {
-  try { if (!token) throw new Error('请通过桌面程序打开控制台。'); await refreshState(true); await refreshModels(); }
+  try { if (!token) throw new Error('请通过桌面程序打开控制台。'); await refreshState(true); await refreshModels(); await refreshVisionModels(); }
   catch (e) { toast(e.message, true); $('side-status').textContent = '连接失败'; $('start-button').disabled = true; }
   setInterval(() => { if (token) refreshState(false).catch(() => { $('side-status').textContent = '连接暂时中断'; }); }, 2500);
 })();
