@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>晚晴 · Companion</title><link rel="icon" href="/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><img src="/mark.svg" alt="" width="40" height="40"><div><strong>晚晴</strong><span>COMPANION DESK</span></div></div>
+    <div class="nav-caption">你的陪伴空间</div>
+    <nav aria-label="主导航">
+      <button class="nav-item active" data-page="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/></svg><span>开始陪伴</span></button>
+      <button class="nav-item" data-page="models"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1v4m6-4v4M9 19v4m6-4v4M1 9h4m-4 6h4m14-6h4m-4 6h4M9 9h6v6H9z"/></svg><span>模型</span></button>
+      <button class="nav-item" data-page="persona"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 22v-2a8 8 0 0 1 16 0v2"/></svg><span>角色设定</span></button>
+    </nav>
+    <div class="sidebar-bottom"><div class="side-state"><i id="side-dot" class="dot"></i><span id="side-status">正在连接…</span></div><p>把日常，留一点温柔。</p><span class="version">LOCAL COMPANION · 0.2</span></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumb">我的空间 <span>/</span> <b id="page-label">开始陪伴</b></div><div class="privacy-mark"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 6 2v5c0 4-6 8-6 8S4 13 4 9V4z"/><path d="m7 9 2 2 4-4"/></svg><span id="privacy-text">本地模式</span></div></header>
+    <div class="content">
+      <section id="page-home" class="page">
+        <div class="page-heading"><div class="eyebrow">A LITTLE CLOSER, EVERY DAY</div><h1>今天，也在这里。</h1><p>选好模型，调好她的性格，然后开始聊天。</p></div>
+        <div class="hero">
+          <div class="hero-copy"><div id="hero-status" class="status-pill"><i class="dot"></i><span>准备好时，就开始吧</span></div><h2>留一盏灯，<br>给你的日常。</h2><p id="hero-description">晚晴已准备好。启动陪伴后，<br>就可以回到微信和她聊聊。</p><div class="hero-actions"><button id="start-button" class="primary large"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg><span>一键启动陪伴</span></button><button id="stop-button" class="text-button" hidden>停止服务</button></div><div id="operation-text" class="operation-text" aria-live="polite">电脑保持开机，陪伴就能持续在线。</div></div>
+          <div class="hero-art" aria-hidden="true"><div class="art-ring ring-one"></div><div class="art-ring ring-two"></div><div class="paper-orbit"></div><div class="paper-card card-back"></div><div class="paper-card card-front"><div class="card-sun"></div><div class="card-line"></div><div class="card-line short"></div><div class="card-stamp">WITH YOU</div></div><div class="art-caption">a space for two.</div><div class="art-star star-one">✳</div><div class="art-star star-two">✦</div></div>
+        </div>
+        <div class="summary-grid">
+          <button class="summary-card" data-page="models"><div class="summary-icon sage"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="4"/><path d="M9 9h6v6H9zM9 2v3m6-3v3M9 19v3m6-3v3"/></svg></div><div><span class="card-label">当前模型</span><h3 id="home-model">qwen3:8b</h3><p id="home-model-detail">本地运行 · Ollama</p></div><span class="card-arrow">↗</span></button>
+          <button class="summary-card" data-page="persona"><div class="persona-monogram" id="home-monogram">晴</div><div><span class="card-label">你的陪伴角色</span><h3 id="home-name">晚晴</h3><p>可自由调整性格与相处方式</p></div><span class="card-arrow">↗</span></button>
+        </div>
+        <div class="gentle-note"><span class="note-number">01</span><p>第一次使用微信？<strong>先完成 ClawBot 扫码绑定。</strong>启动服务后，在微信发一句话，确认她能收到并回复。</p><span class="note-flower">✳</span></div>
+      </section>
+      <section id="page-models" class="page" hidden>
+        <div class="page-heading"><div class="eyebrow">THE MIND BEHIND THE MOMENT</div><h1>选择她的思考方式。</h1><p>本地模型或你自己的 API，人物与记忆会一直保留。</p></div>
+        <div class="settings-card">
+          <div class="segmented" aria-label="模型来源"><button id="choose-local" class="selected" aria-pressed="true">本地 Ollama<span>在你的电脑上运行</span></button><button id="choose-api" aria-pressed="false">API 服务<span>连接服务商或中转接口</span></button></div>
+          <div id="local-fields" class="model-fields"><div class="field-top"><label for="local-model">已下载的模型</label><button id="refresh-models" class="small-button">↻ 刷新列表</button></div><select id="local-model"><option>正在读取模型…</option></select><p id="models-note" class="field-help">读取这台电脑中已安装的 Ollama 模型。</p><div class="info-box"><div class="info-symbol">↳</div><p>本地推理不产生模型 API 调用费。模型无法使用时，会直接提示，不会自动转到云端。</p></div></div>
+          <div id="api-fields" class="model-fields" hidden>
+            <label for="api-url">服务地址 <span>Base URL</span></label><input id="api-url" type="url" placeholder="https://你的服务商域名/v1" autocomplete="off" spellcheck="false"><p class="field-help">填写兼容 Chat Completions 的基础地址，通常以 /v1 结尾。</p>
+            <div class="field-row"><div><label for="api-model">模型名称 <span>Model ID</span></label><input id="api-model" placeholder="服务商提供的模型 ID" autocomplete="off" spellcheck="false"></div><div><label for="api-key">API Key</label><input id="api-key" type="password" placeholder="输入你的密钥" autocomplete="off" spellcheck="false"></div></div>
+            <label class="checkbox-row"><input id="remember-key" type="checkbox"><span>在此 Windows 账户下加密保存密钥</span></label><p id="key-note" class="field-help">不保存时，密钥仅在本次窗口运行期间有效。</p>
+            <details class="advanced"><summary>高级参数</summary><div class="field-row"><div><label for="api-context">上下文长度</label><input id="api-context" type="number" value="32768" min="16000" max="1000000"></div><div><label for="api-max">最长回复 tokens</label><input id="api-max" type="number" value="512" min="1" max="32768"></div></div></details>
+            <div class="info-box amber"><div class="info-symbol">↗</div><p>应用 API 模型后，角色设定、相关记忆和对话上下文会发送给你填写的服务商。调用费用以对方计费规则为准。</p></div>
+          </div>
+          <div class="settings-footer"><p>运行中应用设置，会自动重启陪伴服务。</p><button id="save-model" class="primary">应用模型 <span>↗</span></button></div>
+        </div>
+        <div class="connection-card"><div><h3>给连接打个招呼</h3><p id="test-description">用当前已应用的模型，试着回复一句中文。</p></div><button id="test-model" class="secondary">测试当前模型</button><div id="test-result" class="test-result" hidden aria-live="polite"></div></div>
+      </section>
+      <section id="page-persona" class="page" hidden>
+        <div class="page-heading"><div class="eyebrow">MAKE IT FEEL LIKE HER</div><h1>让她，有自己的样子。</h1><p>名字、语气、相处方式，都可以慢慢调整。</p></div>
+        <div class="persona-layout"><div class="settings-card persona-form"><div class="field-top"><label for="role-name">角色名称</label><span class="quiet-label">会同步替换提示词中的旧名字</span></div><input id="role-name" maxlength="32" placeholder="例如：晚晴"><label for="role-soul">性格与相处方式</label><textarea id="role-soul" rows="10" placeholder="描述她的性格、语气和相处偏好…"></textarea><p class="field-help">可以写：自然的短句、偶尔俏皮、少一些说教；也可以保留已有设定继续修改。</p><label for="role-user">希望她了解的你</label><textarea id="role-user" rows="4" placeholder="你的称呼、喜好、作息，或希望她记住的稳定资料…"></textarea><div class="settings-footer"><button id="reset-persona" class="text-button">恢复当前设定</button><button id="save-persona" class="primary">保存角色设定 <span>↗</span></button></div></div><aside class="persona-aside"><div class="profile-preview"><div class="profile-halo"><div id="preview-monogram">晴</div></div><span>YOUR COMPANION</span><h2 id="preview-name">晚晴</h2><div class="profile-rule"></div><p>不必一次写好所有细节。<br>你们的相处，可以慢慢长成<br>喜欢的样子。</p></div><p class="aside-note">保存会开启新的对话上下文，让新设定生效。已确认的长期记忆会保留。</p></aside></div>
+      </section>
+      <footer class="page-footer"><span>LOCAL COMPANION</span><span>为你的日常，留一个位置。</span></footer>
+    </div>
+  </main>
+  <div id="toast" class="toast" hidden role="status"><span id="toast-message"></span><button id="dismiss-toast" aria-label="关闭提示">×</button></div>
+</body></html>

@@ -1,0 +1,24 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { ROOT } from '../src/config.mjs';
+const [electronArg, nodeArg, outArg, homeArg, runtimeArg] = process.argv.slice(2);
+if (!electronArg || !nodeArg || !outArg) throw new Error('用法：node scripts/build-desktop.mjs Electron-dist目录 Node.exe路径 输出目录 [本机私有目录] [本机OpenClaw运行时]');
+const electronDir = path.resolve(electronArg), node = path.resolve(nodeArg), output = path.resolve(outArg);
+await fs.access(path.join(electronDir, 'electron.exe')); await fs.access(node);
+if (await fs.access(output).then(() => true, () => false)) throw new Error('输出目录已存在，请选择新的构建目录，避免覆盖运行中的应用。');
+await fs.cp(electronDir, output, { recursive: true, filter: source => path.basename(source) !== 'default_app.asar' });
+await fs.rename(path.join(output, 'electron.exe'), path.join(output, 'Local Companion.exe'));
+const appDir = path.join(output, 'resources', 'app'); await fs.mkdir(appDir, { recursive: true });
+for (const name of ['src', 'desktop', 'templates', 'docs', 'README.md', 'LICENSE', 'THIRD_PARTY.md']) await fs.cp(path.join(ROOT, name), path.join(appDir, name), { recursive: true });
+await fs.mkdir(path.join(appDir, 'scripts'), { recursive: true });
+await fs.copyFile(path.join(ROOT, 'scripts', 'wechat.ps1'), path.join(appDir, 'scripts', 'wechat.ps1'));
+const metadata = JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8'));
+await fs.writeFile(path.join(appDir, 'package.json'), JSON.stringify({ name: 'local-companion-desktop', version: metadata.version, main: 'desktop/main.cjs', description: metadata.description, license: metadata.license }, null, 2));
+const nodeDir = path.join(output, 'resources', 'node'); await fs.mkdir(nodeDir, { recursive: true });
+await fs.copyFile(node, path.join(nodeDir, 'node.exe'));
+await fs.cp(path.join(path.dirname(node), 'node_modules', 'npm'), path.join(nodeDir, 'node_modules', 'npm'), { recursive: true });
+for (const license of ['LICENSE', 'LICENSE.txt']) { try { await fs.copyFile(path.join(path.dirname(node), license), path.join(nodeDir, 'NODE-LICENSE.txt')); break; } catch (e) { if (e.code !== 'ENOENT') throw e; } }
+if (homeArg && runtimeArg) await fs.writeFile(path.join(output, 'local-launch.json'), JSON.stringify({ home: path.resolve(homeArg), runtime: path.resolve(runtimeArg) }, null, 2));
+await fs.writeFile(path.join(output, '微信绑定.cmd'), '@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0resources\\app\\scripts\\wechat.ps1" login\r\npause\r\n');
+await fs.writeFile(path.join(output, '使用说明.txt'), '双击 Local Companion.exe 打开。完整保留此文件夹，不要只移动 exe。\r\n开始陪伴：一键启动 / 停止。模型：选择本地模型或填写API。角色设定：编辑名字和提示词。\r\n首次连接微信：先停止陪伴，双击 微信绑定.cmd，用手机微信扫码确认，再回到控制台启动。\r\n完整操作手册：resources/app/README.md。\r\n私有数据默认保存在当前 Windows 用户目录下 .local-companion；不在程序文件夹内。\r\n');
+console.log('桌面版已构建：' + output);
