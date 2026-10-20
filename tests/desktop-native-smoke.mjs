@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { ROOT } from '../src/config.mjs';
 const require = createRequire(import.meta.url), { _electron: electron } = require(process.env.COMPANION_PLAYWRIGHT || 'playwright');
 const root = process.env.COMPANION_TEST_ROOT || os.tmpdir(); await fs.mkdir(root, { recursive: true });
@@ -15,6 +16,18 @@ try {
   app = await electron.launch(options); let page = await app.firstWindow(); page.setDefaultTimeout(120000); await page.waitForLoadState('networkidle');
   await page.getByRole('heading', { name: '今天，也在这里。' }).waitFor();
   console.log('PASS native Electron window and isolated renderer');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide());
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+  await new Promise((resolve, reject) => {
+    const second = spawn(options.executablePath, options.args, { env: options.env, windowsHide: true, stdio: 'ignore' });
+    second.once('error', reject); second.once('exit', code => code === 0 ? resolve() : reject(new Error('Second instance failed: ' + code)));
+  });
+  const deadline = Date.now() + 10000;
+  while (!await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())) {
+    if (Date.now() > deadline) throw new Error('Second launch did not restore hidden window');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  console.log('PASS a second launch restores a hidden existing window');
   await page.locator('nav [data-page="models"]').click(); await page.locator('#choose-api').click();
   await page.locator('#api-url').fill('https://desktop-vault-fixture.test/v1'); await page.locator('#api-model').fill('fixture-no-network'); await page.locator('#api-key').fill('native-vault-fixture-not-real');
   assert.equal(await page.locator('#remember-key').isEnabled(), true); await page.locator('#remember-key').check();

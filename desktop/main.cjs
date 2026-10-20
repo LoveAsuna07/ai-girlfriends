@@ -64,7 +64,7 @@ async function boot() {
 }
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
+  app.on('second-instance', () => { if (window && !window.isDestroyed()) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); } });
   app.whenReady().then(boot).catch(async e => { await dialog.showMessageBox({ type: 'error', title: 'AI 陪伴', message: '无法打开桌面控制台', detail: e.message }); quitting = true; app.quit(); });
   app.on('window-all-closed', () => { if (backend?.connected) backend.send({ type: 'shutdown' }); setTimeout(() => backend?.kill(), 1500).unref(); app.quit(); });
   app.on('before-quit', event => {
