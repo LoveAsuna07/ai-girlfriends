@@ -2,6 +2,8 @@
 // Windows kill() uses TerminateProcess and cannot invoke OpenClaw's cleanup.
 let requested = false;
 let timer;
+const home = process.env.OPENCLAW_HOME;
+if (home) await (await import('./wechat-adapter.mjs')).installWechatAdapter(home);
 function stopWhenReady() {
   if (process.listenerCount('SIGTERM') > 0) {
     clearInterval(timer);
@@ -14,6 +16,7 @@ function stopWhenReady() {
 function requestStop() {
   if (requested) return;
   requested = true;
+  globalThis[Symbol.for('local-companion.chat')]?.close();
   stopWhenReady();
 }
 process.on('message', message => {

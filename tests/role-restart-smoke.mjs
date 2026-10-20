@@ -28,7 +28,7 @@ process.env.COMPANION_API_KEY = 'loopback-role-regression-only';
 try {
   const c = await init(home);
   c.mode = 'api'; c.gatewayPort = gatewayPort;
-  c.api = { baseUrl: `http://127.0.0.1:${mock.address().port}/v1`, model: 'mock-chat', keyEnv: 'COMPANION_API_KEY', contextWindow: 32768, maxTokens: 128, timeoutMs: 60000 };
+  c.api = { baseUrl: `http://127.0.0.1:${mock.address().port}/v1`, model: 'mock-chat', keyEnv: 'COMPANION_API_KEY', contextWindow: 32768, maxTokens: 128, timeoutMs: 60000, temperature: 0.65 };
   await atomicWrite(paths(home).config, c);
   const chat = async message => runOC(home, await load(home), ['agent', ...((await processStatus(home)).running ? [] : ['--local']), '--agent', 'companion', '--session-id', 'role-regression', '--message', message, '--thinking', 'off', '--json'], { capture: true, timeoutMs: 120000 });
   await chat('old-session-marker-9031');
@@ -41,6 +41,7 @@ try {
     assert.equal((await fetch(`http://127.0.0.1:${current.gatewayPort}/healthz`)).ok, true);
     await chat(`new-session-marker-${i}`);
     const messages = JSON.stringify(requests.at(-1).messages);
+    assert.equal(requests.at(-1).temperature, 0.65);
     assert.match(messages, new RegExp(`persona-marker-${i}`));
     assert.match(messages, new RegExp(`profile-marker-${i}`));
     assert.doesNotMatch(messages, /old-session-marker-9031/);

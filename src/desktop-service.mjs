@@ -9,6 +9,7 @@ import { localModels, testModel, localModelInfo, localVisionModels, testVision }
 import { archiveRoleState } from './role-state.mjs';
 import { visionSettings, proactiveSettings, validateFeatures } from './features.mjs';
 import { proactiveStatus } from './proactive.mjs';
+import { chatSettings } from './chat.mjs';
 
 const files = ['IDENTITY.md', 'SOUL.md', 'USER.md'];
 const nameOf = text => text.match(/^-\s*名字[：:]\s*(.+)$/m)?.[1]?.trim() || '晚晴';
@@ -42,7 +43,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
     const gateway = publicStatus(await dependencies.status(home));
     Object.assign(gateway, gateway.running ? await gatewayReadiness(home, c) : { ready: false });
     return {
-      mode: c.mode, local: c.local, api: c.api ? { baseUrl: c.api.baseUrl, model: c.api.model, contextWindow: c.api.contextWindow, maxTokens: c.api.maxTokens } : null, persona: p,
+      mode: c.mode, local: c.local, api: c.api ? { baseUrl: c.api.baseUrl, model: c.api.model, contextWindow: c.api.contextWindow, maxTokens: c.api.maxTokens, temperature: c.api.temperature ?? 0.7, timeoutMs: c.api.timeoutMs } : null, persona: p, chat: chatSettings(c),
       vision: visionSettings(c), proactive: proactiveSettings(c), proactiveStatus: await proactiveStatus(home, c),
       gateway,
       wechatReady: await verifyWechatOwner(home).then(owner => owner.restricted, () => false),
@@ -162,7 +163,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
     stop: () => exclusive('正在停止陪伴服务…', async () => { await dependencies.stop(home); return { message: '陪伴服务已停止。' }; }),
     saveFeatures: input => exclusive('正在保存图片与主动联系设置…', async () => {
       const c = await load(home);
-      const next = { ...c, vision: input.vision, proactive: input.proactive };
+      const next = { ...c, vision: input.vision, proactive: input.proactive, chat: input.chat ?? c.chat };
       const normalized = validateFeatures(next); Object.assign(next, normalized);
       validateConfig(next, next.mode, process.env, true);
       if (next.vision.enabled && next.mode === 'local') {
@@ -180,12 +181,13 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
       if (input.mode === 'local') {
         if (typeof input.model !== 'string') throw new Error('请选择本地模型。');
         next.local.model = input.model.trim();
+        for (const key of ['temperature', 'contextWindow', 'maxTokens', 'timeoutMs']) if (input.local?.[key] !== undefined) next.local[key] = Number(input.local[key]);
         validateConfig(next);
         const models = await dependencies.localModels(next);
         if (!models.includes(next.local.model)) throw new Error('这个模型尚未下载，请选择列表中的模型。');
       } else {
         const a = input.api || {};
-        next.api = { baseUrl: validateEndpoint(a.baseUrl?.trim()), model: a.model?.trim(), keyEnv, contextWindow: Number(a.contextWindow || 32768), maxTokens: Number(a.maxTokens || 512), timeoutMs: 120000 };
+        next.api = { baseUrl: validateEndpoint(a.baseUrl?.trim()), model: a.model?.trim(), keyEnv, contextWindow: Number(a.contextWindow ?? old.api?.contextWindow ?? 32768), maxTokens: Number(a.maxTokens ?? old.api?.maxTokens ?? 512), timeoutMs: Number(a.timeoutMs ?? old.api?.timeoutMs ?? 120000), temperature: Number(a.temperature ?? old.api?.temperature ?? 0.7) };
         if (a.key && typeof a.key !== 'string') throw new Error('密钥格式不正确。');
         const changingProvider = !old.api || new URL(old.api.baseUrl).origin !== new URL(next.api.baseUrl).origin;
         if (changingProvider && !a.key?.trim()) throw new Error('更换服务地址时，请重新输入对应服务的 API Key。');

@@ -1,5 +1,6 @@
 import { validateConfig } from './config.mjs';
 import { visionSettings } from './features.mjs';
+import { cleanChatText } from './chat.mjs';
 
 export async function requestJson(url, { timeoutMs = 10000, ...options } = {}) {
   let response;
@@ -49,7 +50,7 @@ export async function testVision(c, input) {
 }
 export function cleanReply(text) {
   if (typeof text !== 'string') throw new Error('模型回复结构不正确。');
-  const clean = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  const clean = cleanChatText(text);
   if (!clean || clean.includes('<think>')) throw new Error('模型返回空回复或未结束的思考内容。');
   return clean;
 }
@@ -58,10 +59,10 @@ export async function testModel(c, { mode = c.mode, env = process.env, prompt = 
   const chat = messages || [{ role: 'user', content: prompt }]; let data, text;
   if (mode === 'local') {
     const models = await localModels(c); if (!models.includes(m.model)) throw new Error(`Ollama 未安装 ${m.model}；请自行安装后重试，本项目不会自动下载。`);
-    data = await requestJson(`${m.baseUrl.replace(/\/$/, '')}/api/chat`, { method: 'POST', timeoutMs: m.timeoutMs, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: m.model, messages: chat, stream: false, think: false, options: { num_ctx: m.testContext || 8192, num_predict: m.maxTokens, temperature: 0.7 } }) });
+    data = await requestJson(`${m.baseUrl.replace(/\/$/, '')}/api/chat`, { method: 'POST', timeoutMs: m.timeoutMs, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: m.model, messages: chat, stream: false, think: false, options: { num_ctx: Math.min(m.testContext || 8192, m.contextWindow), num_predict: m.maxTokens, temperature: m.temperature ?? 0.7 } }) });
     text = cleanReply(data.message?.content);
   } else {
-    data = await requestJson(`${m.baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', timeoutMs: m.timeoutMs, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env[m.keyEnv]}` }, body: JSON.stringify({ model: m.model, messages: chat, stream: false, max_tokens: m.maxTokens }) });
+    data = await requestJson(`${m.baseUrl.replace(/\/$/, '')}/chat/completions`, { method: 'POST', timeoutMs: m.timeoutMs, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env[m.keyEnv]}` }, body: JSON.stringify({ model: m.model, messages: chat, stream: false, max_tokens: m.maxTokens, temperature: m.temperature ?? 0.7 }) });
     text = cleanReply(data.choices?.[0]?.message?.content);
   }
   return { mode, model: m.model, elapsedMs: Math.round(performance.now() - start), text };

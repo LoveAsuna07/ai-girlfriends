@@ -37,7 +37,7 @@ async function boot() {
     });
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  window = new BrowserWindow({ width: 1180, height: 820, minWidth: 960, minHeight: 690, title: '晚晴 · Companion', backgroundColor: '#f5f2eb', autoHideMenuBar: true, show: false, icon: path.join(__dirname, 'ui', 'icon.png'), webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
+  window = new BrowserWindow({ width: 1180, height: 820, minWidth: 960, minHeight: 690, title: 'AI 陪伴 · Companion', backgroundColor: '#f5f2eb', autoHideMenuBar: true, show: false, icon: path.join(__dirname, 'ui', 'icon.png'), webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => { if (new URL(url).origin !== endpoint.origin) event.preventDefault(); });
   window.once('ready-to-show', () => window.show());
@@ -65,7 +65,7 @@ async function boot() {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
-  app.whenReady().then(boot).catch(async e => { await dialog.showMessageBox({ type: 'error', title: '晚晴', message: '无法打开桌面控制台', detail: e.message }); quitting = true; app.quit(); });
+  app.whenReady().then(boot).catch(async e => { await dialog.showMessageBox({ type: 'error', title: 'AI 陪伴', message: '无法打开桌面控制台', detail: e.message }); quitting = true; app.quit(); });
   app.on('window-all-closed', () => { if (backend?.connected) backend.send({ type: 'shutdown' }); setTimeout(() => backend?.kill(), 1500).unref(); app.quit(); });
   app.on('before-quit', event => {
     if (!quitting && window && !window.isDestroyed()) { event.preventDefault(); window.close(); return; }

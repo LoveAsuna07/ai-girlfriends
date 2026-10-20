@@ -18,6 +18,18 @@ async function fixture(t, options = {}) {
 }
 const api = (extra = {}) => ({ mode: 'api', api: { baseUrl: 'https://provider.test/v1', model: 'test-chat', key: 'desktop-fixture-not-a-real-key', remember: false, ...extra } });
 
+test('local and API generation profiles survive round-trip switches independently', async t => {
+  const f = await fixture(t), service = await createDesktopService(f.home, { hooks: f.hooks });
+  await service.applyModel({ mode: 'local', model: 'qwen3.5:2b', local: { temperature: 0.65, contextWindow: 16384, maxTokens: 256, timeoutMs: 180000 } });
+  await service.applyModel(api({ temperature: 0.85, contextWindow: 32768, maxTokens: 640, timeoutMs: 90000 }));
+  await service.applyModel({ mode: 'local', model: 'qwen3.5:2b' });
+  const c = await load(f.home);
+  assert.equal(c.local.temperature, 0.65); assert.equal(c.local.maxTokens, 256);
+  assert.equal(c.api.temperature, 0.85); assert.equal(c.api.maxTokens, 640); assert.equal(c.api.timeoutMs, 90000);
+  await assert.rejects(service.applyModel({ mode: 'local', model: 'qwen3.5:2b', local: { temperature: 3 } }), /temperature/);
+  assert.equal((await load(f.home)).local.temperature, 0.65);
+});
+
 test('desktop HTTP requires session token and rejects cross-origin requests', async t => {
   const f = await fixture(t), app = await serveDesktop({ home: f.home, hooks: f.hooks }); t.after(app.close);
   assert.equal((await fetch(app.origin + '/api/state')).status, 401);

@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
-let token = new URLSearchParams(location.hash.slice(1)).get('session');
+let token = new URLSearchParams(location.hash.slice(1)).get('session') || sessionStorage.getItem('companion-session');
+if (token) sessionStorage.setItem('companion-session', token);
 history.replaceState(null, '', location.pathname);
 let current, selectedMode = 'local', localBusy = false, toastTimer;
 const pageNames = { home: '开始陪伴', models: '模型', persona: '角色设定', together: '更多陪伴' };
@@ -37,6 +38,9 @@ function fillForms() {
   $('role-name').value = current.persona.name; $('role-soul').value = current.persona.soul; $('role-user').value = current.persona.user; preview();
   modeFields(current.mode);
   $('api-url').value = current.api?.baseUrl || ''; $('api-model').value = current.api?.model || '';
+  for (const mode of ['local', 'api']) { const m = current[mode] || {}; $(mode + '-temperature').value = m.temperature ?? 0.7; $(mode + '-timeout').value = (m.timeoutMs ?? (mode === 'local' ? 180000 : 120000)) / 1000; }
+  $('local-context').value = current.local.contextWindow; $('local-max').value = current.local.maxTokens;
+  $('chat-split').checked = current.chat.splitReplies; $('chat-debounce').value = current.chat.debounceMs / 1000; $('chat-bubbles').value = current.chat.maxBubbles; $('chat-delay').value = current.chat.delayMs / 1000;
   $('api-context').value = current.api?.contextWindow || 32768; $('api-max').value = current.api?.maxTokens || 512;
   $('remember-key').disabled = !current.credentials.canStore;
   $('remember-key').checked = current.credentials.stored;
@@ -115,9 +119,9 @@ $('refresh-models').addEventListener('click', refreshModels);
 $('role-name').addEventListener('input', preview);
 $('reset-persona').addEventListener('click', () => { $('role-name').value = current.persona.name; $('role-soul').value = current.persona.soul; $('role-user').value = current.persona.user; preview(); });
 $('save-persona').addEventListener('click', () => action('persona', { name: $('role-name').value, soul: $('role-soul').value, user: $('role-user').value }, { forms: true }));
-$('save-model').addEventListener('click', () => action('model', { mode: selectedMode, model: $('local-model').value, api: { baseUrl: $('api-url').value, model: $('api-model').value, key: $('api-key').value, remember: $('remember-key').checked, contextWindow: Number($('api-context').value), maxTokens: Number($('api-max').value) } }, { forms: true }));
+$('save-model').addEventListener('click', () => action('model', { mode: selectedMode, model: $('local-model').value, local: { temperature: Number($('local-temperature').value), contextWindow: Number($('local-context').value), maxTokens: Number($('local-max').value), timeoutMs: Number($('local-timeout').value) * 1000 }, api: { baseUrl: $('api-url').value, model: $('api-model').value, key: $('api-key').value, remember: $('remember-key').checked, temperature: Number($('api-temperature').value), timeoutMs: Number($('api-timeout').value) * 1000, contextWindow: Number($('api-context').value), maxTokens: Number($('api-max').value) } }, { forms: true }));
 $('test-model').addEventListener('click', () => action('test'));
-$('save-features').addEventListener('click', () => action('features', { vision: { enabled: $('vision-enabled').checked, localModel: $('vision-local-model').value, apiModel: $('vision-api-model').value.trim() }, proactive: { enabled: $('proactive-enabled').checked, idleMinutes: Number($('proactive-idle').value), intervalMinutes: Number($('proactive-interval').value), dailyLimit: Number($('proactive-limit').value), start: $('proactive-start').value, end: $('proactive-end').value, timeZone: $('proactive-zone').value.trim(), prompt: $('proactive-prompt').value } }, { forms: true }));
+$('save-features').addEventListener('click', () => action('features', { chat: { splitReplies: $('chat-split').checked, debounceMs: Math.round(Number($('chat-debounce').value) * 1000), maxBubbles: Number($('chat-bubbles').value), delayMs: Math.round(Number($('chat-delay').value) * 1000) }, vision: { enabled: $('vision-enabled').checked, localModel: $('vision-local-model').value, apiModel: $('vision-api-model').value.trim() }, proactive: { enabled: $('proactive-enabled').checked, idleMinutes: Number($('proactive-idle').value), intervalMinutes: Number($('proactive-interval').value), dailyLimit: Number($('proactive-limit').value), start: $('proactive-start').value, end: $('proactive-end').value, timeZone: $('proactive-zone').value.trim(), prompt: $('proactive-prompt').value } }, { forms: true }));
 $('test-vision').addEventListener('click', async () => {
   if (localBusy) return;
   const file = $('vision-file').files[0];
