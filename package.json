@@ -1,6 +1,6 @@
 {
   "name": "local-companion",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "main": "desktop/main.cjs",
   "private": true,
   "type": "module",

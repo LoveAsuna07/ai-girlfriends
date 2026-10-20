@@ -4,7 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { init, load, paths, atomicWrite, readJson, validateConfig, validateEndpoint } from './config.mjs';
-import { prepare, runtimeEntry, runOC, start, stop, processStatus, installRuntime, verifyWechatOwner } from './runtime.mjs';
+import { prepare, runtimeEntry, runOC, start, stop, processStatus, installRuntime, verifyWechatOwner, gatewayReadiness } from './runtime.mjs';
 import { localModels, testModel, localModelInfo, localVisionModels, testVision } from './providers.mjs';
 import { archiveRoleState } from './role-state.mjs';
 import { visionSettings, proactiveSettings, validateFeatures } from './features.mjs';
@@ -40,7 +40,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
   async function snapshot() {
     const c = await load(home), p = await persona();
     const gateway = publicStatus(await dependencies.status(home));
-    gateway.ready = gateway.running && await fetch(`http://127.0.0.1:${c.gatewayPort}/healthz`, { signal: AbortSignal.timeout(700) }).then(r => r.ok, () => false);
+    Object.assign(gateway, gateway.running ? await gatewayReadiness(home, c) : { ready: false });
     return {
       mode: c.mode, local: c.local, api: c.api ? { baseUrl: c.api.baseUrl, model: c.api.model, contextWindow: c.api.contextWindow, maxTokens: c.api.maxTokens } : null, persona: p,
       vision: visionSettings(c), proactive: proactiveSettings(c), proactiveStatus: await proactiveStatus(home, c),

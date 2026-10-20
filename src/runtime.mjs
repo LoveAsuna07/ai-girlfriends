@@ -58,12 +58,22 @@ export async function processStatus(home) {
   try {
     const response = await fetch(`http://127.0.0.1:${record.controlPort}/status`, { headers: { Authorization: `Bearer ${record.controlToken}` }, signal: AbortSignal.timeout(1500) });
     const current = await response.json();
-    if (response.ok && current.supervisorId === record.supervisorId) return { ...record, running: current.running };
+    if (response.ok && current.supervisorId === record.supervisorId) return { ...record, running: current.running, stopping: !!current.stopping };
   } catch {}
   try { process.kill(record.supervisorPid, 0); return { running: false, uncertain: true }; } catch { return { running: false, stale: true }; }
 }
 async function portFree(port) {
   await new Promise((resolve, reject) => { const server = net.createServer(); server.once('error', () => reject(new Error(`本机端口 ${port} 已被占用；未启动或停止其他服务。`))); server.listen(port, '127.0.0.1', () => server.close(resolve)); });
+}
+export async function gatewayReadiness(home, c) {
+  try {
+    const token = (await fs.readFile(path.join(home, 'gateway-token'), 'utf8')).trim();
+    const response = await fetch(`http://127.0.0.1:${c.gatewayPort}/readyz`, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(1500) });
+    const result = await response.json();
+    const suppressed = Array.isArray(result.suppressed) && result.suppressed.includes('openclaw-weixin');
+    const wechatFailed = Array.isArray(result.failing) && result.failing.includes('openclaw-weixin');
+    return { ready: response.ok && result.ready === true && !suppressed, suppressed, wechatFailed };
+  } catch { return { ready: false, suppressed: false, wechatFailed: false }; }
 }
 export async function start(home, c) {
   validateConfig(c, c.mode, process.env, true);
@@ -81,7 +91,9 @@ export async function start(home, c) {
     await new Promise(r => setTimeout(r, 500));
     const current = await processStatus(home);
     if (attempt > 5 && !current.running) throw new Error('Gateway 提前退出；查看私有 logs/gateway.log。');
-    try { const r = await fetch(`http://127.0.0.1:${c.gatewayPort}/healthz`, { signal: AbortSignal.timeout(500) }); if (r.ok) return; } catch {}
+    const readiness = await gatewayReadiness(home, c);
+    if (readiness.suppressed) throw new Error('微信连接已被异常重启保护暂停。请停止陪伴，等待 5 分钟后重新启动；若再次出现，请检查私有日志。');
+    if (readiness.ready) return;
   }
   throw new Error('Gateway 尚未就绪；已保留本项目进程记录，请检查 status 与私有日志。');
 }
@@ -92,7 +104,7 @@ export async function stop(home) {
   if (s.home !== home || s.entry !== runtimeEntry(home)) throw new Error('进程归属记录不匹配，拒绝停止。');
   const r = await fetch(`http://127.0.0.1:${s.controlPort}/stop`, { method: 'POST', headers: { Authorization: `Bearer ${s.controlToken}` }, signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new Error('监督器未确认停止；未终止其他进程。');
-  for (let i = 0; i < 20; i++) { if (!await exists(paths(home).pid)) return true; await new Promise(r => setTimeout(r, 200)); }
+  for (let i = 0; i < 350; i++) { if (!await exists(paths(home).pid)) return true; await new Promise(r => setTimeout(r, 200)); }
   throw new Error('停止尚未完成，请检查 status。');
 }
 export async function requireStopped(home) { const s = await processStatus(home); if (s.running || s.uncertain) throw new Error('请先 stop 并确认进程停止，再更改模型或记忆，随后 start；运行中配置未修改。'); }

@@ -52,7 +52,7 @@ function ensureVisionOption(model) { if (![...$('vision-local-model').options].s
 function renderStatus() {
   const alive = current.gateway.running, running = alive && current.gateway.ready, busy = localBusy || current.operation.busy;
   document.body.classList.toggle('busy', busy);
-  $('side-status').textContent = current.gateway.uncertain ? '状态待确认' : running ? '陪伴正在运行' : alive ? '服务准备中…' : '陪伴尚未启动';
+  $('side-status').textContent = current.gateway.suppressed ? '微信连接已暂停' : current.gateway.wechatFailed ? '微信连接异常' : current.gateway.uncertain ? '状态待确认' : running ? '陪伴正在运行' : alive ? '服务准备中…' : '陪伴尚未启动';
   $('side-dot').classList.toggle('online', running);
   $('hero-status').classList.toggle('online', running);
   $('hero-status').querySelector('span').textContent = running ? '陪伴已在线' : '准备好时，就开始吧';
@@ -60,7 +60,7 @@ function renderStatus() {
   $('start-button').disabled = busy || alive;
   $('start-button').querySelector('span').textContent = busy ? '请稍候…' : running ? '陪伴正在运行' : alive ? '服务准备中…' : '一键启动陪伴';
   $('stop-button').hidden = !alive; $('stop-button').disabled = busy;
-  $('operation-text').textContent = current.operation.message || (busy ? '正在处理，请稍候…' : running ? (current.wechatReady ? '你可以回到微信，和她聊聊今天。' : '服务已就绪，首次使用请先完成微信扫码绑定。') : '电脑保持开机，陪伴就能持续在线。');
+  $('operation-text').textContent = current.operation.message || (busy ? '正在处理，请稍候…' : current.gateway.suppressed ? '异常重启保护暂停了微信连接。请停止陪伴，等待 5 分钟后重新启动；若再次出现，请检查私有日志。' : current.gateway.wechatFailed ? '微信连接异常，请检查网络和私有日志后停止并重新启动。' : running ? (current.wechatReady ? '你可以回到微信，和她聊聊今天。' : '服务已就绪，首次使用请先完成微信扫码绑定。') : '电脑保持开机，陪伴就能持续在线。');
   $('home-name').textContent = current.persona.name; $('home-monogram').textContent = [...current.persona.name].at(-1);
   $('hero-description').textContent = `${current.persona.name}已准备好。启动陪伴后，\n就可以回到微信和她聊聊。`;
   const model = current.mode === 'local' ? current.local.model : current.api?.model;

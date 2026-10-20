@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { init, paths, atomicWrite, load } from '../src/config.mjs';
 import { runOC, start, stop, processStatus } from '../src/runtime.mjs';
 import { createDesktopService } from '../src/desktop-service.mjs';
@@ -33,7 +34,7 @@ try {
   await chat('old-session-marker-9031');
   await start(home, c);
   const service = await createDesktopService(home);
-  for (let i = 1; i <= 2; i++) {
+  for (let i = 1; i <= 4; i++) {
     await service.savePersona({ name: `小晴${i}`, soul: `你是小晴${i}。角色标记 persona-marker-${i}。`, user: `用户资料标记 profile-marker-${i}。` });
     assert.equal((await processStatus(home)).running, true);
     const current = await load(home);
@@ -43,7 +44,7 @@ try {
     assert.match(messages, new RegExp(`persona-marker-${i}`));
     assert.match(messages, new RegExp(`profile-marker-${i}`));
     assert.doesNotMatch(messages, /old-session-marker-9031/);
-    if (i === 2) assert.doesNotMatch(messages, /new-session-marker-1/);
+    if (i > 1) assert.doesNotMatch(messages, new RegExp(`new-session-marker-${i - 1}`));
     console.log(`PASS save role ${i} with populated SQLite, Gateway healthy, new persona loaded, previous conversation excluded`);
   }
   await stop(home);
@@ -51,6 +52,15 @@ try {
   await start(home, await load(home));
   assert.equal((await processStatus(home)).running, true);
   console.log('PASS memory update with populated SQLite restarts cleanly');
+  await stop(home);
+  const db = new DatabaseSync(path.join(paths(home).state, 'state', 'openclaw.sqlite'), { readOnly: true });
+  try {
+    const boots = db.prepare('SELECT outcome, completed_at_ms, startup_reason FROM gateway_boot_lifecycle').all();
+    assert.ok(boots.length >= 6);
+    assert.ok(boots.every(boot => boot.outcome === 'clean_stop' && boot.completed_at_ms !== null));
+    assert.ok(boots.every(boot => boot.startup_reason !== 'gateway.crash_loop_breaker'));
+    console.log(`PASS ${boots.length} consecutive real Gateway boots stopped cleanly without crash-loop suppression`);
+  } finally { db.close(); }
   console.log('PASS no real WeChat or external model requests; private test data: ' + home);
 } finally {
   await stop(home).catch(() => {});

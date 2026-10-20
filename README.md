@@ -4,11 +4,11 @@
 
 默认角色为成年女性「晚晴」，默认本地模型为 `qwen3:8b`。人物设定可以自由编辑，模型切换后保留角色与已确认的长期记忆。
 
-> 当前版本：0.3.0。仅支持 Windows x64 桌面版。本项目不是微信、腾讯或 OpenClaw 的官方产品；微信接入使用腾讯维护的通道插件。
+> 当前版本：0.3.1。仅支持 Windows x64 桌面版。本项目不是微信、腾讯或 OpenClaw 的官方产品；微信接入使用腾讯维护的通道插件。
 
 ## 下载与准备
 
-普通用户请从本仓库 [Releases](https://github.com/LoveAsuna07/ai-girlfriends/releases) 下载 `local-companion-windows-x64-v0.3.0.zip`，**完整解压后再运行**。GitHub 的「Code → Download ZIP」下载的是源码，不包含可直接双击的桌面程序。
+普通用户请从本仓库 [Releases](https://github.com/LoveAsuna07/ai-girlfriends/releases) 下载 `local-companion-windows-x64-v0.3.1.zip`，**完整解压后再运行**。GitHub 的「Code → Download ZIP」下载的是源码，不包含可直接双击的桌面程序。
 
 便携版已包含 Electron、Node.js 和 npm。首次绑定或启动需要联网安装固定版本的 OpenClaw / 微信插件，可能需要几分钟；不需要另外全局安装 OpenClaw。
 
@@ -178,7 +178,8 @@ node src/cli.mjs memory forget 记忆ID
 | API 返回 429 | 检查额度和服务商限流；避免连续重复发送 |
 | 回复慢 / 显存不足 | 关闭其他占用显存的程序，选更小的已下载模型，降低上下文或输出长度 |
 | 修改角色后还是旧风格 | 等待保存和重启成功；修改会重置短期会话。小模型可能无法完全遵循复杂设定 |
-| 提示 Gateway 提前退出 | 更新到 0.2.1 或更新版本，关闭旧控制台后重开；检查私有 `logs/gateway.log` |
+| 切换 API / 保存设定后微信不回复，或显示微信连接已暂停 | 更新到 0.3.1 或更新版本后关闭旧控制台并重开。若已触发异常重启保护，停止陪伴并等待 5 分钟再启动；无需清空角色或重新扫码。仍未恢复时检查私有 `logs/gateway.log` |
+| 提示 Gateway 提前退出 | 检查私有 `logs/gateway.log`，不要连续反复点击启动 |
 | 端口被占用 | 本项目默认 Gateway 为 `127.0.0.1:18791`；先确认本项目状态。不要终止其他程序来抢占端口 |
 | 下载的是源码，不知道怎么双击 | 下载 Releases 中的 Windows 便携包；源码安装见下一节 |
 
@@ -217,14 +218,14 @@ npm test
 node src/cli.mjs release-check
 ```
 
-53 项自动测试覆盖配置、隐私、模型切换、桌面接口、角色保存和失败恢复。需要已有 OpenClaw 的独立集成回归：
+54 项自动测试覆盖配置、隐私、模型切换、桌面接口、角色保存、失败恢复与微信暂停状态识别。需要已有 OpenClaw 的独立集成回归：
 
 ```powershell
 $env:COMPANION_RUNTIME = Join-Path $env:USERPROFILE '.local-companion\runtime'
 node tests/role-restart-smoke.mjs
 ```
 
-该回归使用真实 OpenClaw 和本机模拟 API，不访问真实云端模型或微信。更多实测与局限见 [验证记录](docs/VALIDATION.md)、[开发设计](docs/DEVELOPMENT.md)。真实服务商与微信收发仍需每位使用者自行完成验证。
+该回归使用真实 OpenClaw 和本机模拟 API，连续四次保存角色并检查启动数据库，确保正常重启记为正常退出、不触发异常重启保护；不访问真实云端模型或微信。更多实测与局限见 [验证记录](docs/VALIDATION.md)、[开发设计](docs/DEVELOPMENT.md)。真实服务商与微信收发仍需每位使用者自行完成验证。
 
 ## 功能边界与许可
 
