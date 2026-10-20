@@ -10,6 +10,7 @@ import { archiveRoleState } from './role-state.mjs';
 import { visionSettings, proactiveSettings, validateFeatures } from './features.mjs';
 import { proactiveStatus } from './proactive.mjs';
 import { chatSettings } from './chat.mjs';
+import { profilesPath, readProfiles, migrateProfiles, publicProfiles, profileName } from './api-profiles.mjs';
 
 const files = ['IDENTITY.md', 'SOUL.md', 'USER.md'];
 const nameOf = text => text.match(/^-\s*名字[：:]\s*(.+)$/m)?.[1]?.trim() || '晚晴';
@@ -22,6 +23,8 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
   const state = { busy: false, message: '', credentialWarning: '' };
   const keyFile = path.join(home, 'desktop-key.enc.json');
   const previous = await load(home);
+  const initialProfiles = await migrateProfiles(home, previous);
+  const sessionKeys = new Map();
   if (previous.api && vault) {
     try {
       const saved = await readJson(keyFile);
@@ -30,6 +33,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
       }
     } catch (e) { if (e.code !== 'ENOENT') state.credentialWarning = '保存的密钥暂时无法读取，请在模型页重新输入。'; }
   }
+  if (initialProfiles.activeId && previous.api && process.env[previous.api.keyEnv]) sessionKeys.set(initialProfiles.activeId, process.env[previous.api.keyEnv]);
   const dependencies = {
     status: processStatus, start, stop, runOC, localModels, testModel, installRuntime, localModelInfo, localVisionModels, testVision,
     ...hooks
@@ -39,11 +43,11 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
     return { name: nameOf(contents['IDENTITY.md']), soul: contents['SOUL.md'], user: contents['USER.md'] };
   }
   async function snapshot() {
-    const c = await load(home), p = await persona();
+    const c = await load(home), p = await persona(), profileData = await readProfiles(home);
     const gateway = publicStatus(await dependencies.status(home));
     Object.assign(gateway, gateway.running ? await gatewayReadiness(home, c) : { ready: false });
     return {
-      mode: c.mode, local: c.local, api: c.api ? { baseUrl: c.api.baseUrl, model: c.api.model, contextWindow: c.api.contextWindow, maxTokens: c.api.maxTokens, temperature: c.api.temperature ?? 0.7, timeoutMs: c.api.timeoutMs } : null, persona: p, chat: chatSettings(c),
+      mode: c.mode, local: c.local, api: c.api ? { baseUrl: c.api.baseUrl, model: c.api.model, contextWindow: c.api.contextWindow, maxTokens: c.api.maxTokens, temperature: c.api.temperature ?? 0.7, timeoutMs: c.api.timeoutMs } : null, persona: p, chat: chatSettings(c), apiProfiles: (() => { const result = publicProfiles(profileData); for (const item of result.items) item.available = sessionKeys.has(item.id); return result; })(),
       vision: visionSettings(c), proactive: proactiveSettings(c), proactiveStatus: await proactiveStatus(home, c),
       gateway,
       wechatReady: await verifyWechatOwner(home).then(owner => owner.restricted, () => false),
@@ -113,11 +117,11 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
       if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) await fs.rm(dir, { recursive: true, force: true });
     }
   }
-  async function transact(next, role, onRollback) {
+  async function transact(next, role, onRollback, commit) {
     const old = await load(home), p = paths(home), original = new Map();
     const savedStatus = await dependencies.status(home);
     if (savedStatus.uncertain) throw new Error('服务状态暂时无法确认，请关闭其他控制窗口后重试。');
-    for (const file of [p.config, p.oc, ...files.map(f => path.join(p.workspace, f))]) {
+    for (const file of [p.config, p.oc, keyFile, profilesPath(home), ...files.map(f => path.join(p.workspace, f))]) {
       try { original.set(file, await fs.readFile(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; original.set(file, null); }
     }
     let archived;
@@ -129,6 +133,7 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
         next.sessionEpoch = crypto.randomUUID();
       }
       await atomicWrite(p.config, next); await prepare(home, next);
+      await commit?.();
       if (savedStatus.running) { state.message = '正在重新启动，让设置生效…'; await dependencies.start(home, next); }
     } catch (error) {
       onRollback?.();
@@ -173,11 +178,21 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
       return { message: '图片与主动联系设置已保存。主动消息仅在陪伴服务运行、允许时段和微信会话可用时发送。' };
     }),
     testVision: input => exclusive('正在看这张图片，首次加载可能需要一些时间…', async () => dependencies.testVision(await load(home), input)),
+    deleteApiProfile: input => exclusive('正在删除 API 配置…', async () => {
+      const data = await readProfiles(home);
+      if (input.id === data.activeId) throw new Error('请先应用另一套 API 配置，再删除当前配置。');
+      if (!data.profiles.some(p => p.id === input.id)) throw new Error('未找到这套 API 配置。');
+      await atomicWrite(profilesPath(home), { ...data, profiles: data.profiles.filter(p => p.id !== input.id) });
+      sessionKeys.delete(input.id);
+      return { message: 'API 配置及其保存的密钥已删除。' };
+    }),
     applyModel: input => exclusive('正在检查模型设置…', async () => {
       const old = await load(home), next = structuredClone(old);
       if (!['local', 'api'].includes(input.mode)) throw new Error('请选择本地模型或 API 服务。');
       next.mode = input.mode;
       const keyEnv = 'COMPANION_API_KEY', priorKey = process.env[keyEnv];
+      const profiles = await readProfiles(home);
+      let selected, candidateKey, savedName;
       if (input.mode === 'local') {
         if (typeof input.model !== 'string') throw new Error('请选择本地模型。');
         next.local.model = input.model.trim();
@@ -187,24 +202,42 @@ export async function createDesktopService(home, { vault, hooks = {} } = {}) {
         if (!models.includes(next.local.model)) throw new Error('这个模型尚未下载，请选择列表中的模型。');
       } else {
         const a = input.api || {};
-        next.api = { baseUrl: validateEndpoint(a.baseUrl?.trim()), model: a.model?.trim(), keyEnv, contextWindow: Number(a.contextWindow ?? old.api?.contextWindow ?? 32768), maxTokens: Number(a.maxTokens ?? old.api?.maxTokens ?? 512), timeoutMs: Number(a.timeoutMs ?? old.api?.timeoutMs ?? 120000), temperature: Number(a.temperature ?? old.api?.temperature ?? 0.7) };
+        selected = a.createProfile ? undefined : profiles.profiles.find(p => p.id === (a.profileId || profiles.activeId));
+        if (a.profileId && !selected) throw new Error('所选 API 配置不存在，请刷新后重试。');
+        const baseline = selected?.api || old.api;
+        next.api = { baseUrl: validateEndpoint(a.baseUrl?.trim()), model: a.model?.trim(), keyEnv, contextWindow: Number(a.contextWindow ?? baseline?.contextWindow ?? 32768), maxTokens: Number(a.maxTokens ?? baseline?.maxTokens ?? 512), timeoutMs: Number(a.timeoutMs ?? baseline?.timeoutMs ?? 120000), temperature: Number(a.temperature ?? baseline?.temperature ?? 0.7) };
+        savedName = profileName(a.name ?? selected?.name, next.api);
+        if (!selected && profiles.profiles.length >= 50) throw new Error('最多保存 50 套 API 配置，请先删除不用的配置。');
         if (a.key && typeof a.key !== 'string') throw new Error('密钥格式不正确。');
-        const changingProvider = !old.api || new URL(old.api.baseUrl).origin !== new URL(next.api.baseUrl).origin;
-        if (changingProvider && !a.key?.trim()) throw new Error('更换服务地址时，请重新输入对应服务的 API Key。');
-        if (a.key?.trim()) process.env[keyEnv] = a.key.trim();
+        const sameEndpoint = selected && selected.api.baseUrl === next.api.baseUrl;
+        if (a.key?.trim()) candidateKey = a.key.trim();
+        else if (sameEndpoint) {
+          candidateKey = sessionKeys.get(selected.id);
+          if (!candidateKey && selected.encryptedKey && vault) {
+            try { candidateKey = await vault.decrypt(selected.encryptedKey); }
+            catch { throw new Error('这套配置的密钥无法解密，请重新输入。'); }
+          }
+          if (!candidateKey && selected.id === profiles.activeId) candidateKey = priorKey;
+        }
+        if (!candidateKey) throw new Error('新增配置或更换服务地址时，请输入对应 API Key；未保存密钥的配置也需要重新输入。');
         next.apiConsentAt = new Date().toISOString();
       }
       try {
+        if (input.mode === 'api') process.env[keyEnv] = candidateKey;
         validateConfig(next, next.mode, process.env, true);
         if (input.mode === 'api' && input.api.remember && !vault) throw new Error('当前环境不支持加密保存密钥，请取消勾选后使用。');
         const encrypted = input.mode === 'api' && input.api.remember ? await vault.encrypt(process.env[keyEnv]) : null;
-        await ensureRuntime(); await validateOffline(next); await transact(next, undefined, () => { if (priorKey === undefined) delete process.env[keyEnv]; else process.env[keyEnv] = priorKey; });
+        const id = selected?.id || crypto.randomUUID();
+        await ensureRuntime(); await validateOffline(next); await transact(next, undefined, () => { if (priorKey === undefined) delete process.env[keyEnv]; else process.env[keyEnv] = priorKey; }, input.mode === 'api' ? async () => {
+          const record = { id, name: savedName, api: next.api, encryptedKey: encrypted };
+          const items = selected ? profiles.profiles.map(p => p.id === id ? record : p) : [...profiles.profiles, record];
+          await atomicWrite(profilesPath(home), { version: 1, activeId: id, profiles: items });
+          if (encrypted) await atomicWrite(keyFile, { origin: new URL(next.api.baseUrl).origin, value: encrypted });
+          else await fs.rm(keyFile, { force: true });
+        } : undefined);
         if (input.mode === 'api') {
           state.credentialWarning = '';
-          try {
-            if (encrypted) await atomicWrite(keyFile, { origin: new URL(next.api.baseUrl).origin, value: encrypted });
-            else await fs.rm(keyFile, { force: true });
-          } catch { state.credentialWarning = '模型已应用，但密钥保存设置未能更新，请下次打开时检查。'; }
+          sessionKeys.set(id, candidateKey);
         }
         return { message: '模型设置已生效，人物与记忆已保留。' };
       } catch (e) { if (priorKey === undefined) delete process.env[keyEnv]; else process.env[keyEnv] = priorKey; throw e; }

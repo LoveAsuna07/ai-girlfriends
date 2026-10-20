@@ -34,9 +34,21 @@ try {
   await page.locator('#save-model').click(); await page.getByText('模型设置已生效，人物与记忆已保留。', { exact: true }).waitFor();
   const cipher = await fs.readFile(path.join(home, 'desktop-key.enc.json'), 'utf8'); assert.doesNotMatch(cipher, /native-vault-fixture-not-real/);
   console.log('PASS real Windows encrypted key storage; no remote model request made');
+  await page.waitForFunction(() => !document.body.classList.contains('busy') && document.querySelector('#api-profile').value !== '');
+  const firstProfile = await page.locator('#api-profile').inputValue();
+  await page.locator('#new-api-profile').click(); await page.locator('#api-profile-name').fill('第二套加密配置');
+  await page.locator('#api-url').fill('https://second-vault-fixture.test/v1'); await page.locator('#api-model').fill('fixture-two'); await page.locator('#api-key').fill('second-native-vault-fixture');
+  await page.locator('#save-model').click();
+  await page.waitForFunction(() => document.querySelector('#api-profile').value !== '' && !document.body.classList.contains('busy'));
+  assert.notEqual(await page.locator('#api-profile').inputValue(), firstProfile);
   await app.close(); app = null;
   app = await electron.launch(options); page = await app.firstWindow(); page.setDefaultTimeout(60000); await page.waitForLoadState('networkidle');
   await page.locator('nav [data-page="models"]').click(); await page.locator('#api-key').waitFor();
   assert.equal(await page.locator('#api-key').getAttribute('placeholder'), '密钥已就绪，留空继续使用');
   assert.equal(await page.locator('#remember-key').isChecked(), true); console.log('PASS key restoration after actual desktop reopen');
+  await page.locator('#api-profile').selectOption(firstProfile); assert.equal(await page.locator('#api-key').inputValue(), '');
+  await page.locator('#save-model').click();
+  await page.waitForFunction(id => document.querySelector('#api-profile').value === id && !document.body.classList.contains('busy'), firstProfile);
+  assert.equal(await page.locator('#api-url').inputValue(), 'https://desktop-vault-fixture.test/v1');
+  console.log('PASS independent encrypted profile keys survive app restart and switch-back without retyping');
 } finally { if (app) await app.close(); }

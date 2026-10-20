@@ -32,6 +32,26 @@ try {
   await page.locator('#choose-api').click();
   await page.locator('#api-url').fill('https://fixture-provider.test/v1'); await page.locator('#api-model').fill('fixture-chat'); await page.locator('#api-key').fill('ui-fixture-only');
   await page.locator('#api-fields details summary').click(); await page.locator('#api-temperature').fill('0.8'); await click('save-model', 'model');
+  const firstProfile = (await app.service.snapshot()).apiProfiles.activeId;
+  await page.locator('#new-api-profile').click();
+  await page.locator('#api-profile-name').fill('备用接口'); await page.locator('#api-url').fill('https://backup-fixture.test/v1');
+  await page.locator('#api-model').fill('backup-chat'); await page.locator('#api-key').fill('backup-ui-fixture'); await click('save-model', 'model');
+  const secondProfile = (await app.service.snapshot()).apiProfiles.activeId;
+  assert.notEqual(firstProfile, secondProfile);
+  await page.locator('#api-profile').selectOption(firstProfile);
+  assert.equal(await page.locator('#api-key').inputValue(), '');
+  assert.equal(await page.locator('#api-url').inputValue(), 'https://fixture-provider.test/v1');
+  await page.locator('#api-profile-name').fill('主接口');
+  await click('save-model', 'model');
+  assert.equal(process.env.COMPANION_API_KEY, 'ui-fixture-only');
+  assert.equal((await app.service.snapshot()).apiProfiles.items.find(p => p.id === firstProfile).name, '主接口');
+  if (process.env.COMPANION_PROFILE_PREVIEW) {
+    await page.locator('#dismiss-toast').click(); await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: process.env.COMPANION_PROFILE_PREVIEW, fullPage: true });
+  }
+  await page.locator('#api-profile').selectOption(secondProfile); await click('delete-api-profile', 'profile-delete');
+  assert.equal((await app.service.snapshot()).apiProfiles.items.length, 1);
+  console.log('PASS saved API selection, key-free switch-back and inactive profile deletion');
   await page.locator('#choose-local').click(); await click('save-model', 'model');
   let c = await load(home); assert.equal(c.local.temperature, 0.65); assert.equal(c.local.maxTokens, 384); assert.equal(c.api.temperature, 0.8);
   await page.locator('nav [data-page="together"]').click();

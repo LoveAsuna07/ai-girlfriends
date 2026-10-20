@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createDesktopService } from '../src/desktop-service.mjs';
 import { serveDesktop } from '../src/desktop-server.mjs';
 import { paths, load } from '../src/config.mjs';
+import { profilesPath } from '../src/api-profiles.mjs';
 
 async function fixture(t, options = {}) {
   const base = process.env.COMPANION_TEST_ROOT || os.tmpdir(); await fs.mkdir(base, { recursive: true });
@@ -17,6 +18,81 @@ async function fixture(t, options = {}) {
   return { home, hooks, events, setRunning: value => { running = value; } };
 }
 const api = (extra = {}) => ({ mode: 'api', api: { baseUrl: 'https://provider.test/v1', model: 'test-chat', key: 'desktop-fixture-not-a-real-key', remember: false, ...extra } });
+const profileVault = { encrypt: async value => Buffer.from('protected:' + value).toString('base64'), decrypt: async value => Buffer.from(value, 'base64').toString().slice(10) };
+
+test('multiple API profiles retain independent encrypted keys across switching and reopening', async t => {
+  const f = await fixture(t); const service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ name: '主配置', key: 'profile-A-fixture', remember: true }));
+  const first = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ createProfile: true, name: '备用', baseUrl: 'https://backup.test/v1', model: 'backup-chat', key: 'profile-B-fixture', remember: true }));
+  const second = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ profileId: first, key: '', remember: true }));
+  assert.equal(process.env.COMPANION_API_KEY, 'profile-A-fixture');
+  delete process.env.COMPANION_API_KEY;
+  const reopened = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await reopened.applyModel(api({ profileId: second, baseUrl: 'https://backup.test/v1', model: 'backup-chat', key: '', remember: true }));
+  assert.equal(process.env.COMPANION_API_KEY, 'profile-B-fixture');
+  const snapshot = await reopened.snapshot(); assert.equal(snapshot.apiProfiles.items.length, 2);
+  assert.doesNotMatch(JSON.stringify(snapshot), /profile-[AB]-fixture|encryptedKey|protected:/);
+  assert.doesNotMatch(await fs.readFile(profilesPath(f.home), 'utf8'), /profile-[AB]-fixture/);
+});
+
+test('creating another profile on the same endpoint requires its own key', async t => {
+  const f = await fixture(t), service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ remember: true })); const before = await fs.readFile(profilesPath(f.home));
+  f.setRunning(true); f.events.length = 0;
+  await assert.rejects(service.applyModel(api({ createProfile: true, name: '另一账号', key: '', remember: true })), /API Key/);
+  assert.deepEqual(f.events, []); assert.deepEqual(await fs.readFile(profilesPath(f.home)), before);
+});
+
+test('failed API profile restart restores configuration, encrypted credentials and active selection together', async t => {
+  const f = await fixture(t), normal = f.hooks.start;
+  f.hooks.start = async (home, c) => { if (c.api?.model === 'broken-profile') throw new Error('target restart failed'); return normal(home, c); };
+  const service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ key: 'rollback-A-fixture', remember: true })); const first = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ createProfile: true, model: 'broken-profile', key: 'rollback-B-fixture', remember: true })); const second = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ profileId: first, key: '', remember: true }));
+  const files = [paths(f.home).config, profilesPath(f.home), path.join(f.home, 'desktop-key.enc.json')];
+  const before = await Promise.all(files.map(file => fs.readFile(file))); f.setRunning(true);
+  await assert.rejects(service.applyModel(api({ profileId: second, model: 'broken-profile', key: '', remember: true })), /target restart failed/);
+  assert.deepEqual(await Promise.all(files.map(file => fs.readFile(file))), before);
+  assert.equal(process.env.COMPANION_API_KEY, 'rollback-A-fixture'); assert.equal((await service.snapshot()).gateway.running, true);
+});
+
+test('inactive profile deletion removes its saved key and active profile cannot be deleted', async t => {
+  const f = await fixture(t), service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ remember: true })); const first = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ createProfile: true, key: 'other-fixture', remember: true })); const second = (await service.snapshot()).apiProfiles.activeId;
+  await assert.rejects(service.deleteApiProfile({ id: second }), /先应用另一套/);
+  await service.deleteApiProfile({ id: first });
+  assert.deepEqual((await service.snapshot()).apiProfiles.items.map(p => p.id), [second]);
+});
+
+test('profiles without remembered keys cannot borrow the active profile key after reopening', async t => {
+  const f = await fixture(t), service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ remember: true })); const first = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ createProfile: true, key: 'temporary-fixture', remember: false })); const second = (await service.snapshot()).apiProfiles.activeId;
+  await service.applyModel(api({ profileId: first, key: '', remember: true })); delete process.env.COMPANION_API_KEY;
+  const reopened = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await assert.rejects(reopened.applyModel(api({ profileId: second, key: '' })), /重新输入/);
+  assert.equal(process.env.COMPANION_API_KEY, 'desktop-fixture-not-a-real-key');
+});
+
+test('existing single API configuration migrates without losing its encrypted key', async t => {
+  const f = await fixture(t); let service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ remember: true })); await fs.rm(profilesPath(f.home)); delete process.env.COMPANION_API_KEY;
+  service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  assert.equal((await service.snapshot()).apiProfiles.items.length, 1); assert.equal((await service.snapshot()).credentials.present, true);
+});
+
+test('a damaged legacy key file does not block opening the configuration editor', async t => {
+  const f = await fixture(t); let service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  await service.applyModel(api({ remember: true })); await fs.rm(profilesPath(f.home));
+  await fs.writeFile(path.join(f.home, 'desktop-key.enc.json'), '{broken'); delete process.env.COMPANION_API_KEY;
+  service = await createDesktopService(f.home, { hooks: f.hooks, vault: profileVault });
+  const state = await service.snapshot(); assert.equal(state.apiProfiles.items.length, 1);
+  assert.equal(state.credentials.present, false); assert.match(state.credentials.warning, /无法读取/);
+});
 
 test('local and API generation profiles survive round-trip switches independently', async t => {
   const f = await fixture(t), service = await createDesktopService(f.home, { hooks: f.hooks });

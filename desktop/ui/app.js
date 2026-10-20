@@ -2,7 +2,8 @@ const $ = id => document.getElementById(id);
 let token = new URLSearchParams(location.hash.slice(1)).get('session') || sessionStorage.getItem('companion-session');
 if (token) sessionStorage.setItem('companion-session', token);
 history.replaceState(null, '', location.pathname);
-let current, selectedMode = 'local', localBusy = false, toastTimer;
+let current, selectedMode = 'local', localBusy = false, toastTimer, selectedProfileId = '';
+
 const pageNames = { home: '开始陪伴', models: '模型', persona: '角色设定', together: '更多陪伴' };
 function toast(message, error = false) {
   clearTimeout(toastTimer); $('toast-message').textContent = message;
@@ -34,6 +35,26 @@ function preview() {
   $('preview-name').textContent = name;
   $('preview-monogram').textContent = [...name].at(-1);
 }
+function loadApiProfile(id) {
+  selectedProfileId = id;
+  const profile = current.apiProfiles.items.find(p => p.id === id);
+  const a = profile?.api || {};
+  $('api-profile-name').value = profile?.name || '';
+  $('api-url').value = a.baseUrl || ''; $('api-model').value = a.model || ''; $('api-key').value = '';
+  $('api-context').value = a.contextWindow ?? 32768; $('api-max').value = a.maxTokens ?? 512;
+  $('api-temperature').value = a.temperature ?? 0.7; $('api-timeout').value = (a.timeoutMs ?? 120000) / 1000;
+  $('remember-key').checked = current.credentials.canStore && (profile ? profile.stored : true);
+  const available = profile?.stored || profile?.available || (id && id === current.apiProfiles.activeId && current.credentials.present);
+  $('api-key').placeholder = available ? '密钥已就绪，留空继续使用' : '输入这套配置的密钥';
+  $('api-profile-note').textContent = id && id === current.apiProfiles.activeId ? '当前使用的配置；先切换到另一套后可删除。' : profile ? '应用后切换；编辑名称和参数后应用即可保存。' : '填写后点击应用模型，保存为新配置。';
+  renderStatus();
+}
+function fillProfilePicker() {
+  const picker = $('api-profile'); picker.replaceChildren(new Option('新建 API 配置', ''));
+  for (const p of current.apiProfiles.items) picker.add(new Option(p.name + (p.id === current.apiProfiles.activeId ? '（当前）' : ''), p.id));
+  picker.value = current.apiProfiles.activeId || '';
+  loadApiProfile(picker.value);
+}
 function fillForms() {
   $('role-name').value = current.persona.name; $('role-soul').value = current.persona.soul; $('role-user').value = current.persona.user; preview();
   modeFields(current.mode);
@@ -51,6 +72,7 @@ function fillForms() {
   const p = current.proactive;
   $('proactive-enabled').checked = p.enabled; $('proactive-idle').value = p.idleMinutes; $('proactive-interval').value = p.intervalMinutes; $('proactive-limit').value = p.dailyLimit;
   $('proactive-start').value = p.start; $('proactive-end').value = p.end; $('proactive-zone').value = p.timeZone; $('proactive-prompt').value = p.prompt;
+  fillProfilePicker();
 }
 function ensureVisionOption(model) { if (![...$('vision-local-model').options].some(x => x.value === model)) $('vision-local-model').add(new Option(model + '（当前配置）', model)); }
 function renderStatus() {
@@ -75,6 +97,7 @@ function renderStatus() {
   $('vision-local-fields').hidden = current.mode !== 'local'; $('vision-api-fields').hidden = current.mode !== 'api';
   const ps = current.proactiveStatus;
   $('proactive-runtime').textContent = !current.proactive.enabled ? '主动联系已关闭。' : !running ? '陪伴服务未运行，主动联系已暂停。' : `${ps.reason}。今日尝试 ${ps.attemptsToday}/${current.proactive.dailyLimit} 次。${ps.lastResult ? '\n' + ps.lastResult : ''}`;
+  $('api-profile').disabled = busy; $('new-api-profile').disabled = busy; $('delete-api-profile').disabled = busy || !selectedProfileId || selectedProfileId === current.apiProfiles.activeId;
   for (const id of ['save-model', 'save-persona', 'test-model', 'refresh-models', 'reset-persona', 'save-features', 'test-vision']) $(id).disabled = busy;
 }
 async function refreshState(forms = false) {
@@ -119,7 +142,7 @@ $('refresh-models').addEventListener('click', refreshModels);
 $('role-name').addEventListener('input', preview);
 $('reset-persona').addEventListener('click', () => { $('role-name').value = current.persona.name; $('role-soul').value = current.persona.soul; $('role-user').value = current.persona.user; preview(); });
 $('save-persona').addEventListener('click', () => action('persona', { name: $('role-name').value, soul: $('role-soul').value, user: $('role-user').value }, { forms: true }));
-$('save-model').addEventListener('click', () => action('model', { mode: selectedMode, model: $('local-model').value, local: { temperature: Number($('local-temperature').value), contextWindow: Number($('local-context').value), maxTokens: Number($('local-max').value), timeoutMs: Number($('local-timeout').value) * 1000 }, api: { baseUrl: $('api-url').value, model: $('api-model').value, key: $('api-key').value, remember: $('remember-key').checked, temperature: Number($('api-temperature').value), timeoutMs: Number($('api-timeout').value) * 1000, contextWindow: Number($('api-context').value), maxTokens: Number($('api-max').value) } }, { forms: true }));
+$('save-model').addEventListener('click', () => action('model', { mode: selectedMode, model: $('local-model').value, local: { temperature: Number($('local-temperature').value), contextWindow: Number($('local-context').value), maxTokens: Number($('local-max').value), timeoutMs: Number($('local-timeout').value) * 1000 }, api: { profileId: selectedProfileId || undefined, createProfile: !selectedProfileId, name: $('api-profile-name').value.trim() || undefined, baseUrl: $('api-url').value, model: $('api-model').value, key: $('api-key').value, remember: $('remember-key').checked, temperature: Number($('api-temperature').value), timeoutMs: Number($('api-timeout').value) * 1000, contextWindow: Number($('api-context').value), maxTokens: Number($('api-max').value) } }, { forms: true }));
 $('test-model').addEventListener('click', () => action('test'));
 $('save-features').addEventListener('click', () => action('features', { chat: { splitReplies: $('chat-split').checked, debounceMs: Math.round(Number($('chat-debounce').value) * 1000), maxBubbles: Number($('chat-bubbles').value), delayMs: Math.round(Number($('chat-delay').value) * 1000) }, vision: { enabled: $('vision-enabled').checked, localModel: $('vision-local-model').value, apiModel: $('vision-api-model').value.trim() }, proactive: { enabled: $('proactive-enabled').checked, idleMinutes: Number($('proactive-idle').value), intervalMinutes: Number($('proactive-interval').value), dailyLimit: Number($('proactive-limit').value), start: $('proactive-start').value, end: $('proactive-end').value, timeZone: $('proactive-zone').value.trim(), prompt: $('proactive-prompt').value } }, { forms: true }));
 $('test-vision').addEventListener('click', async () => {
@@ -135,3 +158,7 @@ $('dismiss-toast').addEventListener('click', () => { $('toast').hidden = true; }
   catch (e) { toast(e.message, true); $('side-status').textContent = '连接失败'; $('start-button').disabled = true; }
   setInterval(() => { if (token) refreshState(false).catch(() => { $('side-status').textContent = '连接暂时中断'; }); }, 2500);
 })();
+
+$('api-profile').addEventListener('change', () => loadApiProfile($('api-profile').value));
+$('new-api-profile').addEventListener('click', () => { $('api-profile').value = ''; loadApiProfile(''); $('api-profile-name').focus(); });
+$('delete-api-profile').addEventListener('click', () => action('profile-delete', { id: selectedProfileId }, { forms: true }));

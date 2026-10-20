@@ -21,6 +21,7 @@
 | src/chat.mjs | 连发合并、按会话串行处理、输出清理、分条、取消 |
 | src/wechat-adapter.mjs | 接入固定腾讯插件 2.4.10 的两处消息入口；不修改第三方文件 |
 | src/desktop-service.mjs | 桌面业务、双模型参数、密钥保存、修改失败恢复 |
+| src/api-profiles.mjs | 多套 API 配置、旧配置迁移、安全的列表视图；密钥加解密由桌面系统桥完成 |
 | src/desktop-server.mjs | 只监听本机的桌面接口、会话认证与静态页面 |
 | src/providers.mjs | Ollama 元数据、模型连接测试、图片测试 |
 | src/vision-cli.mjs | 受限图片预处理，不允许任意路径或主机工具 |
@@ -40,6 +41,7 @@
 - 提问与说话风格：templates/persona/SOUL.md；个人已保存的设定在私人 workspace，不会被新模板自动覆盖。
 - 微信回复清理、拆条与等待：chat.mjs；接入点在 wechat-adapter.mjs。
 - 本地 / API 参数：config.mjs、desktop-service.mjs、desktop/ui/app.js。
+- 多套 API 切换：api-profiles.mjs、desktop-service.mjs 的 applyModel；列表选择只填表，点击应用才切换。
 - 配置变更后无响应：runtime.mjs、supervisor.mjs、role-state.mjs，结合私人日志。
 - 主动联系：proactive.mjs。当前不解析用户“我在忙”等自然语言为持久暂停指令；不能将这一能力写成已经实现。
 - 添加新页面或设置：desktop-server.mjs → desktop-service.mjs → desktop/ui/。
@@ -54,5 +56,6 @@
 - tests/role-restart-smoke.mjs：已有聊天记录时连续保存角色，核对正常停止和模型参数。
 - tests/vision-inbound-smoke.mjs：原生入站图片预处理。
 - tests/desktop-native-smoke.mjs：Electron 与系统加密保存。
+- tests/api-profiles-native-smoke.mjs：真实 Gateway 在两个本机模拟服务之间切换，并检查密钥与对话连续性。
 
 环境变量 COMPANION_RUNTIME 指向安装 OpenClaw 的目录；COMPANION_TEST_ROOT 指向源码外测试目录；浏览器测试另需 COMPANION_PLAYWRIGHT。测试不是手机微信实际验收。

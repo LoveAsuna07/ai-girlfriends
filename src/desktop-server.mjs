@@ -30,7 +30,7 @@ export async function serveDesktop({ home = homePath(), vault, hooks, port = 0 }
         let raw = '', bytes = 0; const limit = pathname === '/api/vision-test' ? 14000000 : 100000;
         for await (const chunk of req) { bytes += chunk.length; if (bytes > limit) return json(413, { error: '内容太长。' }); raw += chunk; }
         let body; try { body = JSON.parse(raw || '{}'); } catch { return json(400, { error: '请求内容不是有效 JSON。' }); }
-        const methods = { '/api/start': () => service.start(), '/api/stop': () => service.stop(), '/api/model': () => service.applyModel(body), '/api/persona': () => service.savePersona(body), '/api/test': () => service.test(), '/api/features': () => service.saveFeatures(body), '/api/vision-test': () => service.testVision(body) };
+        const methods = { '/api/start': () => service.start(), '/api/stop': () => service.stop(), '/api/model': () => service.applyModel(body), '/api/persona': () => service.savePersona(body), '/api/test': () => service.test(), '/api/features': () => service.saveFeatures(body), '/api/vision-test': () => service.testVision(body), '/api/profile-delete': () => service.deleteApiProfile(body) };
         if (!methods[pathname]) return json(404, { error: '没有这个操作。' });
         return json(200, await methods[pathname]());
       }
